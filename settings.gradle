@@ -1,0 +1,3 @@
+include ':dlib'
+include ':app'
+rootProject.name = "AgoraAR"
