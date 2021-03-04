@@ -6,12 +6,10 @@ import android.media.Image
 import android.util.Log
 import android.view.SurfaceHolder
 import android.view.SurfaceView
-import android.view.ViewTreeObserver.OnGlobalLayoutListener
 import com.example.agoraar.R
 import com.example.agoraar.util.computeExifOrientation
 import com.example.agoraar.util.decodeExifOrientation
 import com.tzutalin.dlib.FaceDet
-import io.agora.rtc.RtcEngine
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -25,7 +23,7 @@ class OnGetImageListener(context: Context?) : SurfaceView(context),
     SurfaceHolder.Callback {
 
     private val TAG = javaClass::class.java.name
-    private lateinit var rgbBitmap: Bitmap
+    private lateinit var cameraBitmap: Bitmap
     private lateinit var cropRgbBitmap: Bitmap
     private var mFaceDet: FaceDet? = null
     private var mCascadeFile: File? = null
@@ -35,17 +33,22 @@ class OnGetImageListener(context: Context?) : SurfaceView(context),
     private val glassRect = Rect()
     private val cigaretteRect = Rect()
     private var resizeRatio = 0f
-    private lateinit var mFaceLandmarkPaint: Paint
-    private var engine: RtcEngine? = null
+    private var surfaceWidth = 0
+    private var surfaceHeight = 0
 
+    //    private lateinit var mFaceLandmarkPaint: Paint
     // Todo replace 40 with margin top
     private var marginBitmap: Int = 40
 
     // The glasses, cigarette bitmap
-    private val glassesBitmap = BitmapFactory.decodeResource(resources, R.drawable.glasses)
-    private val cigaretteBitmap = BitmapFactory.decodeResource(resources, R.drawable.cigarette)
-    fun initialize(engine: RtcEngine?) {
-        this.engine = engine
+    private val glassesBitmap by lazy {
+        BitmapFactory.decodeResource(resources, R.drawable.glasses)
+    }
+    private val cigaretteBitmap by lazy {
+        BitmapFactory.decodeResource(resources, R.drawable.cigarette)
+    }
+
+    fun initialize() {
         try {
             val inputStream = context.assets.open("shape_predictor_68_face_landmarks.dat")
             val cascadeDir = context.getDir("cascade", Context.MODE_PRIVATE)
@@ -61,11 +64,10 @@ class OnGetImageListener(context: Context?) : SurfaceView(context),
                 outputStream.close()
             }
             mFaceDet = FaceDet(mCascadeFile?.absolutePath)
-
-            mFaceLandmarkPaint = Paint()
-            mFaceLandmarkPaint.color = Color.RED
-            mFaceLandmarkPaint.strokeWidth = 2f
-            mFaceLandmarkPaint.style = Paint.Style.STROKE
+//            mFaceLandmarkPaint = Paint()
+//            mFaceLandmarkPaint.color = Color.RED
+//            mFaceLandmarkPaint.strokeWidth = 2f
+//            mFaceLandmarkPaint.style = Paint.Style.STROKE
         } catch (e: IOException) {
             Log.e(TAG, "Failed to load cascade. Exception thrown: $e")
         }
@@ -101,18 +103,20 @@ class OnGetImageListener(context: Context?) : SurfaceView(context),
         if (this::surfaceHolder.isInitialized.not()) {
             return null
         }
-        rgbBitmap = Bitmap.createBitmap(image.width, image.height, Bitmap.Config.ARGB_8888)
+        cameraBitmap = Bitmap.createBitmap(image.width, image.height, Bitmap.Config.ARGB_8888).let {
+            yuvConverter.yuvToRgb(image, it)
+            // Todo rotate Bitmap take huge resource, so find other way to rotate it.
+            rotate(it, rotateDegree, mirrored)
+        }
         cropRgbBitmap = Bitmap.createBitmap(INPUT_SIZE, INPUT_SIZE, Bitmap.Config.ARGB_8888)
-        yuvConverter.yuvToRgb(image, rgbBitmap)
-        // Todo rotate Bitmap take huge resource, so find other way to rotate it.
-        rgbBitmap = rotate(rgbBitmap, rotateDegree, mirrored)
-        drawResizedBitmap(rgbBitmap, cropRgbBitmap)
-        Log.d(TAG, "rgbBitmap: " + rgbBitmap.width + " " + cropRgbBitmap.width)
+
+        drawResizedBitmap(cameraBitmap, cropRgbBitmap)
+
         val results = mFaceDet?.detect(cropRgbBitmap)
         // Draw on bitmap
         if (results != null) {
-            val canvas = Canvas(rgbBitmap)
-            resizeRatio = rgbBitmap.width.toFloat() / cropRgbBitmap.width.toFloat()
+            val canvas = Canvas(cameraBitmap)
+            resizeRatio = cameraBitmap.width.toFloat() / cropRgbBitmap.width.toFloat()
             for (ret in results) {
                 val landmarks = ret.faceLandmarks
                 val eyeBrowLeft = landmarks[20]
@@ -131,6 +135,7 @@ class OnGetImageListener(context: Context?) : SurfaceView(context),
 //                    val pointY = (it.y + marginBitmap) * resizeRatio
 //                    canvas.drawCircle(pointX, pointY, 2F, mFaceLandmarkPaint)
 //                }
+
                 drawGlasses(
                     canvas,
                     leftEye,
@@ -145,10 +150,15 @@ class OnGetImageListener(context: Context?) : SurfaceView(context),
             }
         }
         tryDrawing(surfaceHolder)
-        return rgbBitmap
+        return cameraBitmap
     }
 
-    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
+    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+        surfaceWidth = width
+        surfaceHeight = height
+        inputImageRect.set(0, 0, right, bottom)
+    }
+
     override fun surfaceCreated(holder: SurfaceHolder) {
         this.surfaceHolder = holder
     }
@@ -166,7 +176,7 @@ class OnGetImageListener(context: Context?) : SurfaceView(context),
     }
 
     private fun drawMyStuff(canvas: Canvas) {
-        canvas.drawBitmap(rgbBitmap, null, inputImageRect, null)
+        canvas.drawBitmap(cameraBitmap, null, inputImageRect, null)
     }
 
     private fun drawGlasses(
@@ -236,14 +246,5 @@ class OnGetImageListener(context: Context?) : SurfaceView(context),
     companion object {
 
         private const val INPUT_SIZE = 224
-    }
-
-    init {
-        viewTreeObserver.addOnGlobalLayoutListener(object : OnGlobalLayoutListener {
-            override fun onGlobalLayout() {
-                viewTreeObserver.removeOnGlobalLayoutListener(this)
-                inputImageRect.set(0, 0, right, bottom)
-            }
-        })
     }
 }

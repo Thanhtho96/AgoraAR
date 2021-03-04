@@ -78,7 +78,6 @@ class MainActivity : PermissionsActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        callInProgress = false
         setContentView(R.layout.activity_main)
         remoteViewContainer = findViewById(R.id.rcv)
     }
@@ -121,7 +120,7 @@ class MainActivity : PermissionsActivity() {
         displayManager.registerDisplayListener(displayListener, null)
         // Wait for the views to be properly laid out
         lifecycleScope.launch(Dispatchers.IO) {
-            mOnGetPreviewListener.initialize(mRtcEngine)
+            mOnGetPreviewListener.initialize()
         }
 
         viewFinder.post {
@@ -277,13 +276,12 @@ class MainActivity : PermissionsActivity() {
     }
 
     override fun onDestroy() {
-        // I try to clear all the recyclerView item_video
         viewDataList.clear()
         videoAdapter?.submitList(ArrayList(viewDataList))
         remoteViewContainer?.removeAllViews()
         super.onDestroy()
-        // but sometime it still fail to call deepAR.release(), when someone join call and leave call several times
         mRtcEngine?.leaveChannel()
+        mOnGetPreviewListener.deInitialize()
         RtcEngine.destroy()
     }
 
@@ -299,7 +297,6 @@ class MainActivity : PermissionsActivity() {
         override fun onJoinChannelSuccess(channel: String, uid: Int, elapsed: Int) {
             runOnUiThread {
                 Log.e(TAG, "onJoinChannelSuccess")
-//                renderer?.isCallInProgress = true
             }
         }
 
@@ -340,8 +337,7 @@ class MainActivity : PermissionsActivity() {
         // Please go to this page for detailed explanation
         // https://docs.agora.io/en/Video/API%20Reference/java/classio_1_1agora_1_1rtc_1_1_rtc_engine.html#af5f4de754e2c1f493096641c5c5c1d8f
         mRtcEngine?.setVideoEncoderConfiguration(
-            VideoEncoderConfiguration( // Agora seems to work best with "Square" resolutions (Aspect Ratio 1:1)
-                // At least when used in combination with DeepAR
+            VideoEncoderConfiguration(
                 VideoEncoderConfiguration.VD_480x480,
                 VideoEncoderConfiguration.FRAME_RATE.FRAME_RATE_FPS_15,
                 VideoEncoderConfiguration.STANDARD_BITRATE,
