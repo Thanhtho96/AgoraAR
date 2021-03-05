@@ -80,10 +80,6 @@ class MainActivity : PermissionsActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         remoteViewContainer = findViewById(R.id.rcv)
-    }
-
-    override fun onStart() {
-        super.onStart()
         checkMultiplePermissions(
             listOf(
                 Manifest.permission.CAMERA,
