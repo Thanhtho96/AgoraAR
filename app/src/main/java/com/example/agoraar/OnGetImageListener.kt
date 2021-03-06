@@ -1,4 +1,4 @@
-package com.example.agoraar.cameraX
+package com.example.agoraar
 
 import android.content.Context
 import android.graphics.*
@@ -6,7 +6,7 @@ import android.media.Image
 import android.util.Log
 import android.view.SurfaceHolder
 import android.view.SurfaceView
-import com.example.agoraar.R
+import com.example.agoraar.util.YuvToRgbConverter
 import com.example.agoraar.util.computeExifOrientation
 import com.example.agoraar.util.decodeExifOrientation
 import com.tzutalin.dlib.FaceDet
@@ -33,7 +33,8 @@ class OnGetImageListener(context: Context?) : SurfaceView(context),
     private val glassRect = Rect()
     private val cigaretteRect = Rect()
     private var resizeRatio = 0f
-    private var isStandRect = false
+    private var compensateTranslateX = 0f
+    private var compensateTranslateY = 0f
 
     private lateinit var mFaceLandmarkPaint: Paint
 
@@ -106,7 +107,12 @@ class OnGetImageListener(context: Context?) : SurfaceView(context),
             dst.width.toFloat() / src.width,
             dst.height.toFloat() / src.height
         )
-        matrix.postScale(scaleFactor, scaleFactor, inputImageRect.exactCenterX(), inputImageRect.exactCenterY())
+        matrix.postScale(
+            scaleFactor,
+            scaleFactor,
+            inputImageRect.exactCenterX(),
+            inputImageRect.exactCenterY()
+        )
         val canvas = Canvas(dst)
         canvas.drawBitmap(src, matrix, null)
     }
@@ -170,13 +176,16 @@ class OnGetImageListener(context: Context?) : SurfaceView(context),
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
         bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        resizeRatio = if (width < height) {
-            isStandRect = true
-            bitmap.width.toFloat() / cropRgbBitmap.width
+        if (width < height) {
+            compensateTranslateX = 0F
+            compensateTranslateY = (height - width) / 2F
+            resizeRatio = bitmap.width.toFloat() / cropRgbBitmap.width
         } else {
-            bitmap.height.toFloat() / cropRgbBitmap.height
+            compensateTranslateX = (width - height) / 2F
+            compensateTranslateY = 0F
+            resizeRatio = bitmap.height.toFloat() / cropRgbBitmap.height
         }
-        inputImageRect.set(0, 0, right, bottom)
+        inputImageRect.set(0, 0, width, height)
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
@@ -225,11 +234,7 @@ class OnGetImageListener(context: Context?) : SurfaceView(context),
 
     private fun Canvas.drawRotateCanvas(bitmap: Bitmap, degrees: Float, rect: Rect) {
         save()
-        if (isStandRect) {
-            translate(0F, (height - width) / 2F)
-        } else {
-            translate((width - height) / 2F, 0F)
-        }
+        translate(compensateTranslateX, compensateTranslateY)
         rotate(degrees, rect.exactCenterX(), rect.exactCenterY())
         drawBitmap(
             bitmap,
@@ -257,11 +262,7 @@ class OnGetImageListener(context: Context?) : SurfaceView(context),
             (leftMouth.x * resizeRatio).toInt(),
             (leftMouth.y * resizeRatio + mouthLength).toInt()
         )
-        if (isStandRect) {
-            translate(0F, (height - width) / 2F)
-        } else {
-            translate((width - height) / 2F, 0F)
-        }
+        translate(compensateTranslateX, compensateTranslateY)
         drawBitmap(
             cigaretteBitmap,
             null,

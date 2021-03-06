@@ -1,4 +1,4 @@
-package com.example.agoraar.cameraX
+package com.example.agoraar.util
 
 import android.annotation.SuppressLint
 import android.content.Context

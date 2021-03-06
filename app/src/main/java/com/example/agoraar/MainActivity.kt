@@ -2,20 +2,18 @@ package com.example.agoraar
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.content.Context
 import android.graphics.Bitmap
-import android.hardware.display.DisplayManager
 import android.os.Bundle
-import android.util.DisplayMetrics
 import android.util.Log
 import android.widget.Button
-import androidx.camera.core.*
+import androidx.camera.core.AspectRatio
+import androidx.camera.core.Camera
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.RecyclerView
-import com.example.agoraar.cameraX.OnGetImageListener
 import com.example.agoraar.util.AgoraVideoRender
 import com.example.agoraar.util.AgoraVideoSource
 import com.example.agoraar.util.HalfLinearLayoutManager
@@ -44,37 +42,14 @@ class MainActivity : PermissionsActivity() {
     private var remoteViewContainer: RecyclerView? = null
     private var videoAdapter: VideoAdapter? = null
     private val viewDataList: MutableList<ViewData> = ArrayList()
-    private lateinit var viewFinder: PreviewView
-    private var displayId: Int = -1
     private var lensFacing: Int = CameraSelector.LENS_FACING_BACK
-    private var imageCapture: ImageCapture? = null
     private var imageAnalyzer: ImageAnalysis? = null
     private var camera: Camera? = null
     private var cameraProvider: ProcessCameraProvider? = null
     private lateinit var mOnGetPreviewListener: OnGetImageListener
-    private val displayManager by lazy {
-        getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
-    }
 
     /** Blocking camera operations are performed using this executor */
     private lateinit var cameraExecutor: ExecutorService
-
-    /**
-     * We need a display listener for orientation changes that do not trigger a configuration
-     * change, for example if we choose to override config change in manifest or for 180-degree
-     * orientation changes.
-     */
-    private val displayListener = object : DisplayManager.DisplayListener {
-        override fun onDisplayAdded(displayId: Int) = Unit
-        override fun onDisplayRemoved(displayId: Int) = Unit
-        override fun onDisplayChanged(displayId: Int) = window.decorView.rootView?.let { view ->
-            if (displayId == this@MainActivity.displayId) {
-                Log.d(TAG, "Rotation changed: ${view.display.rotation}")
-                imageCapture?.targetRotation = view.display.rotation
-                imageAnalyzer?.targetRotation = view.display.rotation
-            }
-        } ?: Unit
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -108,20 +83,14 @@ class MainActivity : PermissionsActivity() {
         mOnGetPreviewListener = OnGetImageListener(this)
         mOnGetPreviewListener.holder.addCallback(mOnGetPreviewListener)
 
-        viewFinder = findViewById(R.id.view_finder)
         // Initialize our background executor
         cameraExecutor = Executors.newSingleThreadExecutor()
-        // Set up the intent filter that will receive events from our main activity
-        // Every time the orientation of device changes, update rotation for use cases
-        displayManager.registerDisplayListener(displayListener, null)
-        // Wait for the views to be properly laid out
+
         lifecycleScope.launch(Dispatchers.IO) {
             mOnGetPreviewListener.initialize()
         }
 
-        viewFinder.post {
-            // Keep track of the display in which this view is attached
-            displayId = viewFinder.display.displayId
+        remoteViewContainer?.post {
             // Set up the camera and its use cases
             setUpCamera()
         }
@@ -174,12 +143,8 @@ class MainActivity : PermissionsActivity() {
     /** Declare and bind preview, capture and analysis use cases */
     @SuppressLint("UnsafeExperimentalUsageError")
     private fun bindCameraUseCases() {
-        // Get screen metrics used to setup camera for full screen resolution
-        val metrics = DisplayMetrics().also { viewFinder.display.getRealMetrics(it) }
-        Log.d(TAG, "Screen metrics: ${metrics.widthPixels} x ${metrics.heightPixels}")
-        val screenAspectRatio = aspectRatio(viewFinder.width, viewFinder.height)
+        val screenAspectRatio = aspectRatio(mOnGetPreviewListener.width, mOnGetPreviewListener.height)
         Log.d(TAG, "Preview aspect ratio: $screenAspectRatio")
-        val rotation = viewFinder.display.rotation
         // CameraProvider
         val cameraProvider = cameraProvider
             ?: throw IllegalStateException("Camera initialization failed.")
@@ -190,9 +155,6 @@ class MainActivity : PermissionsActivity() {
         imageAnalyzer = ImageAnalysis.Builder()
             // We request aspect ratio but no resolution
             .setTargetAspectRatio(screenAspectRatio)
-            // Set initial target rotation, we will have to call this again if rotation changes
-            // during the lifecycle of this use case
-            .setTargetRotation(rotation)
             .build()
             // The analyzer can then be assigned to the instance
             .also {
@@ -215,10 +177,8 @@ class MainActivity : PermissionsActivity() {
             // A variable number of use-cases can be passed here -
             // camera provides access to CameraControl & CameraInfo
             camera = cameraProvider.bindToLifecycle(
-                this, cameraSelector, /*preview,*/ /*imageCapture,*/ imageAnalyzer
+                this, cameraSelector, imageAnalyzer
             )
-            // Attach the viewfinder's surface provider to preview use case
-//            preview?.setSurfaceProvider(viewFinder.surfaceProvider)
         } catch (exc: Exception) {
             Log.e(TAG, "Use case binding failed", exc)
         }

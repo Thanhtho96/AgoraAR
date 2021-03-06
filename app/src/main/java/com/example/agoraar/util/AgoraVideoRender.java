@@ -7,8 +7,8 @@ import io.agora.rtc.mediaio.MediaIO;
 
 
 public class AgoraVideoRender implements IVideoSink {
-    private Peer mPeer;
-    private boolean mIsLocal;
+    private final Peer mPeer;
+    private final boolean mIsLocal;
 
     public AgoraVideoRender(int uid, boolean local) {
         mPeer = new Peer();
