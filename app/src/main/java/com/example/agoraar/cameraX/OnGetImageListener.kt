@@ -32,10 +32,10 @@ class OnGetImageListener(context: Context?) : SurfaceView(context),
     private val inputImageRect = Rect()
     private val glassRect = Rect()
     private val cigaretteRect = Rect()
-    private var resizeRatioW = 0f
-    private var resizeRatioH = 0f
+    private var resizeRatio = 0f
+    private var isStandRect = false
 
-    //    private lateinit var mFaceLandmarkPaint: Paint
+    private lateinit var mFaceLandmarkPaint: Paint
 
     private val cropRgbBitmap by lazy {
         Bitmap.createBitmap(INPUT_SIZE, INPUT_SIZE, Bitmap.Config.ARGB_8888)
@@ -65,10 +65,10 @@ class OnGetImageListener(context: Context?) : SurfaceView(context),
                 outputStream.close()
             }
             mFaceDet = FaceDet(mCascadeFile?.absolutePath)
-//            mFaceLandmarkPaint = Paint()
-//            mFaceLandmarkPaint.color = Color.RED
-//            mFaceLandmarkPaint.strokeWidth = 2f
-//            mFaceLandmarkPaint.style = Paint.Style.STROKE
+            mFaceLandmarkPaint = Paint()
+            mFaceLandmarkPaint.color = Color.RED
+            mFaceLandmarkPaint.strokeWidth = 2f
+            mFaceLandmarkPaint.style = Paint.Style.STROKE
         } catch (e: IOException) {
             Log.e(TAG, "Failed to load cascade. Exception thrown: $e")
         }
@@ -97,25 +97,15 @@ class OnGetImageListener(context: Context?) : SurfaceView(context),
 
     private fun scaleBitmapFitRect(src: Bitmap, dst: Bitmap) {
         val matrix = Matrix()
-        val transX =
-            if (dst.width > src.width)
-                (dst.width - src.width) / 2
-            else
-                (src.width - dst.width) / 2
-
-        val tranY =
-            if (dst.height > src.height)
-                (dst.height - src.height) / 2
-            else
-                (src.height - dst.height) / 2
+        val transX = (dst.width - src.width).absoluteValue / 2
+        val tranY = (dst.height - src.height).absoluteValue / 2
 
         matrix.setTranslate(transX.toFloat(), tranY.toFloat())
 
-        val scaleFactor = if (dst.width > dst.height) {
-            dst.width.toFloat() / src.width
-        } else {
+        val scaleFactor = max(
+            dst.width.toFloat() / src.width,
             dst.height.toFloat() / src.height
-        }
+        )
         matrix.postScale(scaleFactor, scaleFactor, inputImageRect.exactCenterX(), inputImageRect.exactCenterY())
         val canvas = Canvas(dst)
         canvas.drawBitmap(src, matrix, null)
@@ -143,8 +133,6 @@ class OnGetImageListener(context: Context?) : SurfaceView(context),
         // Draw on bitmap
         if (results != null) {
             val canvas = Canvas(bitmap)
-            resizeRatioW = bitmap.width.toFloat() / cropRgbBitmap.width.toFloat()
-            resizeRatioH = bitmap.height.toFloat() / cropRgbBitmap.height.toFloat()
             for (ret in results) {
                 val landmarks = ret.faceLandmarks
                 val eyeBrowLeft = landmarks[20]
@@ -157,15 +145,14 @@ class OnGetImageListener(context: Context?) : SurfaceView(context),
                 val leftMouth = landmarks[67]
                 val rightMouth = landmarks[64]
 
-                //  draw all the landmark
+//                  draw all the landmark
 //                landmarks.forEach {
-//                    val pointX = it.x * resizeRatio
-//                    val pointY = (it.y + marginBitmap) * resizeRatio
+//                    val pointX = (it.x * resizeRatio) + (width - height) / 2
+//                    val pointY = (it.y * resizeRatio)
 //                    canvas.drawCircle(pointX, pointY, 2F, mFaceLandmarkPaint)
 //                }
 
-                drawGlasses(
-                    canvas,
+                canvas.drawGlasses(
                     leftEye,
                     rightEye,
                     topLeftEyePoint,
@@ -174,7 +161,7 @@ class OnGetImageListener(context: Context?) : SurfaceView(context),
                     topNose,
                     bottomNose
                 )
-                drawCigarette(canvas, leftMouth, rightMouth)
+                canvas.drawCigarette(leftMouth, rightMouth)
             }
         }
         surfaceHolder?.let { tryDrawing(it) }
@@ -183,6 +170,12 @@ class OnGetImageListener(context: Context?) : SurfaceView(context),
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
         bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        resizeRatio = if (width < height) {
+            isStandRect = true
+            bitmap.width.toFloat() / cropRgbBitmap.width
+        } else {
+            bitmap.height.toFloat() / cropRgbBitmap.height
+        }
         inputImageRect.set(0, 0, right, bottom)
     }
 
@@ -204,8 +197,7 @@ class OnGetImageListener(context: Context?) : SurfaceView(context),
         }
     }
 
-    private fun drawGlasses(
-        canvas: Canvas,
+    private fun Canvas.drawGlasses(
         leftEye: Point,
         rightEye: Point,
         topLeftEyePoint: Point,
@@ -214,25 +206,30 @@ class OnGetImageListener(context: Context?) : SurfaceView(context),
         topNose: Point,
         bottomNose: Point
     ) {
-        val eyeAndEyeBrowDistance = (topLeftEyePoint.y - eyeBrowLeft) / 2 * resizeRatioW
+        val eyeAndEyeBrowDistance = (topLeftEyePoint.y - eyeBrowLeft) / 2 * resizeRatio
         val length = (topRightEyePoint.x - topLeftEyePoint.x).toDouble()
         val height = abs(topLeftEyePoint.y - topRightEyePoint.y).toDouble()
         var degrees = toDegrees(tan(height / length)).toFloat()
         if (topLeftEyePoint.y > topRightEyePoint.y) {
             degrees = -degrees
         }
-        val topRect = topNose.y * resizeRatioH - eyeAndEyeBrowDistance
+        val topRect = topNose.y * resizeRatio - eyeAndEyeBrowDistance
         glassRect.set(
-            (leftEye.x * resizeRatioW - eyeAndEyeBrowDistance).toInt(),
+            (leftEye.x * resizeRatio - eyeAndEyeBrowDistance).toInt(),
             topRect.toInt(),
-            (rightEye.x * resizeRatioW + eyeAndEyeBrowDistance).toInt(),
+            (rightEye.x * resizeRatio + eyeAndEyeBrowDistance).toInt(),
             (topRect + distanceBetweenPoints(topNose, bottomNose)).toInt()
         )
-        canvas.drawRotateCanvas(glassesBitmap, degrees, glassRect)
+        drawRotateCanvas(glassesBitmap, degrees, glassRect)
     }
 
     private fun Canvas.drawRotateCanvas(bitmap: Bitmap, degrees: Float, rect: Rect) {
         save()
+        if (isStandRect) {
+            translate(0F, (height - width) / 2F)
+        } else {
+            translate((width - height) / 2F, 0F)
+        }
         rotate(degrees, rect.exactCenterX(), rect.exactCenterY())
         drawBitmap(
             bitmap,
@@ -249,18 +246,23 @@ class OnGetImageListener(context: Context?) : SurfaceView(context),
     ): Double {
         val ac = abs(p2.y - p1.y)
         val cb = abs(p2.x - p1.x)
-        return hypot(ac.toDouble(), cb.toDouble()) * resizeRatioW
+        return hypot(ac.toDouble(), cb.toDouble()) * resizeRatio
     }
 
-    private fun drawCigarette(canvas: Canvas, leftMouth: Point, rightMouth: Point) {
-        val mouthLength = (rightMouth.x - leftMouth.x) * resizeRatioW
+    private fun Canvas.drawCigarette(leftMouth: Point, rightMouth: Point) {
+        val mouthLength = (rightMouth.x - leftMouth.x) * resizeRatio
         cigaretteRect.set(
-            (leftMouth.x * resizeRatioW - mouthLength).toInt(),
-            (leftMouth.y * resizeRatioH).toInt(),
-            (leftMouth.x * resizeRatioW).toInt(),
-            (leftMouth.y * resizeRatioH + mouthLength).toInt()
+            (leftMouth.x * resizeRatio - mouthLength).toInt(),
+            (leftMouth.y * resizeRatio).toInt(),
+            (leftMouth.x * resizeRatio).toInt(),
+            (leftMouth.y * resizeRatio + mouthLength).toInt()
         )
-        canvas.drawBitmap(
+        if (isStandRect) {
+            translate(0F, (height - width) / 2F)
+        } else {
+            translate((width - height) / 2F, 0F)
+        }
+        drawBitmap(
             cigaretteBitmap,
             null,
             cigaretteRect,

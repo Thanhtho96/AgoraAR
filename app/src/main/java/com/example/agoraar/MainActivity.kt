@@ -262,14 +262,12 @@ class MainActivity : PermissionsActivity() {
     }
 
     /** Returns true if the device has an available back camera. False otherwise */
-    private fun hasBackCamera(): Boolean {
-        return cameraProvider?.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA) ?: false
-    }
+    private fun hasBackCamera() =
+        cameraProvider?.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA) ?: false
 
     /** Returns true if the device has an available front camera. False otherwise */
-    private fun hasFrontCamera(): Boolean {
-        return cameraProvider?.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA) ?: false
-    }
+    private fun hasFrontCamera() =
+        cameraProvider?.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA) ?: false
 
     override fun onDestroy() {
         viewDataList.clear()
@@ -313,17 +311,15 @@ class MainActivity : PermissionsActivity() {
 
     private fun initializeEngine() {
         mRtcEngine = try {
-            RtcEngine.create(baseContext, "91ba75957b7648ce8287e0d23baa41a8", mRtcEventHandler)
+            RtcEngine.create(this, "91ba75957b7648ce8287e0d23baa41a8", mRtcEventHandler)
         } catch (e: Exception) {
             Log.e(TAG, Log.getStackTraceString(e))
             throw RuntimeException(
-                "NEED TO check rtc sdk init fatal error ${
-                    Log.getStackTraceString(
-                        e
-                    )
-                }"
+                "NEED TO check rtc sdk init fatal error ${Log.getStackTraceString(e)}"
             )
         }
+        mSource = AgoraVideoSource()
+        mRender = AgoraVideoRender(0, true)
         mRtcEngine?.setChannelProfile(Constants.CHANNEL_PROFILE_LIVE_BROADCASTING)
     }
 
@@ -343,8 +339,6 @@ class MainActivity : PermissionsActivity() {
     }
 
     private fun joinChannel() {
-        mSource = AgoraVideoSource()
-        mRender = AgoraVideoRender(0, true)
         mRtcEngine?.setVideoSource(mSource)
         mRtcEngine?.setLocalVideoRenderer(mRender)
         mRtcEngine?.setClientRole(Constants.CLIENT_ROLE_BROADCASTER)
@@ -352,7 +346,7 @@ class MainActivity : PermissionsActivity() {
     }
 
     private fun setupRemoteVideo(uid: Int) {
-        val surfaceView = RtcEngine.CreateRendererView(baseContext)
+        val surfaceView = RtcEngine.CreateRendererView(this)
         mRtcEngine?.setupRemoteVideo(VideoCanvas(surfaceView, VideoCanvas.RENDER_MODE_HIDDEN, uid))
         viewDataList.add(ViewData(surfaceView))
         videoAdapter?.submitList(ArrayList(viewDataList))
